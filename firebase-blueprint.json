@@ -1,0 +1,156 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile containing XP, daily screen limits, levels, and statistics.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique user ID matching request.auth.uid"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "dailyLimitMinutes": {
+          "type": "integer",
+          "description": "Selected daily limit (30, 60, 120, 180 minutes)"
+        },
+        "currentUsageMinutes": {
+          "type": "integer",
+          "description": "Usage today in minutes"
+        },
+        "xp": {
+          "type": "integer",
+          "description": "Current user experience points"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["Bronze", "Silver", "Gold", "Diamond", "Master", "Legend"],
+          "description": "Duolingo-style level"
+        },
+        "streak": {
+          "type": "integer",
+          "description": "Number of consecutive target-meeting days"
+        },
+        "timeSavedMinutes": {
+          "type": "integer",
+          "description": "Total screen-time saved in minutes"
+        },
+        "skillsLearnedCount": {
+          "type": "integer",
+          "description": "Total count of productivity actions/skills finished"
+        },
+        "lastActiveAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last request activity"
+        }
+      },
+      "required": ["uid", "email", "xp", "streak"]
+    },
+    "CompletedChallenge": {
+      "title": "CompletedChallenge",
+      "description": "Records list of completed learning or movement challenges.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["learn", "article", "podcast", "speak", "workout", "quiz"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "xpEarned": {
+          "type": "integer"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "type", "xpEarned"]
+    },
+    "Group": {
+      "title": "Group",
+      "description": "Real-time study group or school team for social scrolling challenges.",
+      "type": "object",
+      "properties": {
+        "groupId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "creatorId": {
+          "type": "string"
+        },
+        "memberUids": {
+          "type": "array"
+        },
+        "totalXp": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["groupId", "name", "creatorId", "memberUids"]
+    },
+    "CoachMessage": {
+      "title": "CoachMessage",
+      "description": "Stores user messages and real-time AI behavioral recommendations.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "sender": {
+          "type": "string",
+          "enum": ["user", "ai"]
+        },
+        "text": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "sender", "text"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Individual user preferences, streak and XP."
+    },
+    "/users/{userId}/completedChallenges/{challengeId}": {
+      "schema": "CompletedChallenge",
+      "description": "Subcollection tracking specific challenges finished."
+    },
+    "/users/{userId}/coachMessages/{messageId}": {
+      "schema": "CoachMessage",
+      "description": "Subcollection for the real-time AI habit-coach dialogue."
+    },
+    "/groups/{groupId}": {
+      "schema": "Group",
+      "description": "Real-time interactive study and competition groups."
+    }
+  }
+}

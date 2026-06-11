@@ -1,0 +1,141 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net - Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable global helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isGuestId(userId) {
+      return userId is string && userId.size() <= 128 && userId.matches('^guest_[a-zA-Z0-9_-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isOwnerOrGuest(userId) {
+      return (isSignedIn() && request.auth.uid == userId) || (request.auth == null && isGuestId(userId));
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    // Validation Blueprint for User Profiles
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'xp', 'streak', 'dailyLimitMinutes', 'currentUsageMinutes', 'displayName', 'level', 'timeSavedMinutes', 'skillsLearnedCount'])
+        && data.keys().size() == 10
+        && data.uid is string && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_-]+$')
+        && data.email is string && data.email.size() <= 200
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.xp is int && data.xp >= 0 && data.xp <= 10000000
+        && data.streak is int && data.streak >= 0 && data.streak <= 10000
+        && data.dailyLimitMinutes is int && (data.dailyLimitMinutes == 30 || data.dailyLimitMinutes == 60 || data.dailyLimitMinutes == 120 || data.dailyLimitMinutes == 180)
+        && data.currentUsageMinutes is int && data.currentUsageMinutes >= 0 && data.currentUsageMinutes <= 1440
+        && data.level is string && (data.level == 'Bronze' || data.level == 'Silver' || data.level == 'Gold' || data.level == 'Diamond' || data.level == 'Master' || data.level == 'Legend')
+        && data.timeSavedMinutes is int && data.timeSavedMinutes >= 0 && data.timeSavedMinutes <= 1000000
+        && data.skillsLearnedCount is int && data.skillsLearnedCount >= 0 && data.skillsLearnedCount <= 1000000;
+    }
+
+    // Validation Blueprint for Completed Challenges
+    function isValidCompletedChallenge(data) {
+      return data.keys().hasAll(['id', 'userId', 'type', 'title', 'xpEarned', 'completedAt'])
+        && data.keys().size() == 6
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.type is string && (data.type == 'learn' || data.type == 'article' || data.type == 'podcast' || data.type == 'speak' || data.type == 'workout' || data.type == 'quiz')
+        && data.title is string && data.title.size() <= 200
+        && data.xpEarned is int && data.xpEarned >= 0 && data.xpEarned <= 500
+        && data.completedAt is string;
+    }
+
+    // Validation Blueprint for AI Coach Messages
+    function isValidCoachMessage(data) {
+      return data.keys().hasAll(['id', 'userId', 'sender', 'text', 'createdAt'])
+        && data.keys().size() == 5
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.sender is string && (data.sender == 'user' || data.sender == 'ai')
+        && data.text is string && data.text.size() <= 5000
+        && data.createdAt is string;
+    }
+
+    // Validation Blueprint for Groups
+    function isValidGroup(data) {
+      return data.keys().hasAll(['groupId', 'name', 'creatorId', 'memberUids', 'totalXp', 'createdAt'])
+        && data.keys().size() == 6
+        && data.groupId is string && data.groupId.size() <= 128
+        && data.name is string && data.name.size() <= 100
+        && data.creatorId is string && data.creatorId.size() <= 128
+        && data.memberUids is list && data.memberUids.size() <= 100
+        && data.totalXp is int && data.totalXp >= 0
+        && data.createdAt is string && data.createdAt.size() <= 128;
+    }
+
+    // 2. User Accounts Routing
+    match /users/{userId} {
+      allow get: if isOwnerOrGuest(userId);
+      allow create: if isOwnerOrGuest(userId) && isValidUserProfile(request.resource.data);
+      
+      // Tiered update pattern
+      allow update: if isOwnerOrGuest(userId) && isValidUserProfile(request.resource.data) && (
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.email == resource.data.email && (
+          // Action 1: Update Daily limit or preferences
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dailyLimitMinutes', 'displayName']) ||
+          // Action 2: Update real-time usage minutes
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentUsageMinutes']) ||
+          // Action 3: Gain XP, Level & stats from completing scrolling challenge
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'level', 'streak', 'timeSavedMinutes', 'skillsLearnedCount']) ||
+          // Fallback of action aggregation
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentUsageMinutes', 'xp', 'level', 'streak', 'timeSavedMinutes', 'skillsLearnedCount'])
+        )
+      );
+      
+      allow delete: if false; // Profiles are immortal to protect streak and user achievements
+
+      // Completed challenges subcollection
+      match /completedChallenges/{challengeId} {
+        allow read: if isOwnerOrGuest(userId);
+        allow create: if isOwnerOrGuest(userId) && isValidId(challengeId) && isValidCompletedChallenge(request.resource.data) && request.resource.data.userId == userId;
+        allow update: if false; // Completed challenges are read-only and immutable after creation to prevent XP spoofing
+        allow delete: if false;
+      }
+
+      // Coach messages subcollection
+      match /coachMessages/{messageId} {
+        allow read: if isOwnerOrGuest(userId);
+        allow create: if isOwnerOrGuest(userId) && isValidId(messageId) && isValidCoachMessage(request.resource.data) && request.resource.data.userId == userId;
+        allow update: if false; // Message history logs cannot be mutated
+        allow delete: if false;
+      }
+    }
+
+    // 3. Collaborative Groups Routing
+    match /groups/{groupId} {
+      allow read: if true;
+      allow create: if isValidId(groupId) && isValidGroup(request.resource.data) && (
+        (isSignedIn() && request.resource.data.creatorId == request.auth.uid) ||
+        (request.auth == null && isGuestId(request.resource.data.creatorId))
+      );
+      
+      allow update: if isValidGroup(request.resource.data) && (
+        request.resource.data.groupId == resource.data.groupId &&
+        request.resource.data.creatorId == resource.data.creatorId && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalXp']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'totalXp'])
+        )
+      );
+      allow delete: if (isSignedIn() && resource.data.creatorId == request.auth.uid) || 
+                       (request.auth == null && isGuestId(resource.data.creatorId));
+    }
+  }
+}

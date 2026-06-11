@@ -1,0 +1,6 @@
+{
+  "name": "ProStop",
+  "description": "Stop scrolling social media. Start growing your skills with daily challenges, real-time sync, and an AI habits coach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
